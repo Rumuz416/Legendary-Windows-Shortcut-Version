@@ -1,8 +1,7 @@
 """
 Windows Özelleştirici (Windows Customizer)
 --------------------------------------------
-Linux'taki masaüstü özelleştirme araçlarına (GNOME Tweaks, KDE System Settings vb.)
-benzer şekilde Windows için basit bir özelleştirme aracı.
+Windows için kapsamlı bir özelleştirme ve sistem araçları uygulaması.
 
 Gereksinimler:
     - Sadece Windows üzerinde çalışır (winreg ve ctypes kullanır).
@@ -26,6 +25,8 @@ import time
 import struct
 import zlib
 import datetime
+import webbrowser
+import zipfile
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, colorchooser
 
@@ -87,6 +88,26 @@ IMLEC_SEMALARI = {
     "Büyüteç (Çok Büyük Varsayılan)": "Windows Default (extra large)",
 }
 
+# İmleç rollerinin Registry değer adları (Control Panel\Cursors altında)
+IMLEC_ROLLERI = {
+    "Normal Seçim (Arrow)": "Arrow",
+    "Yardım Seçimi": "Help",
+    "Arka Planda Çalışıyor": "AppStarting",
+    "Metin Seçimi (IBeam)": "IBeam",
+    "El İşareti (Link)": "Hand",
+    "Meşgul (Wait)": "Wait",
+    "Hassas Seçim (Crosshair)": "Crosshair",
+    "Yasak (No)": "No",
+    "Dikey Boyutlandır": "SizeNS",
+    "Yatay Boyutlandır": "SizeWE",
+    "Çapraz Boyutlandır 1": "SizeNWSE",
+    "Çapraz Boyutlandır 2": "SizeNESW",
+    "Taşı (Move)": "SizeAll",
+    "Yukarı Seçim": "UpArrow",
+    "Konum İşareti (Pin)": "Pin",
+    "Kişi (Person)": "Person",
+}
+
 # "Efsane" koyu tema renk paleti
 RENK = {
     "arkaplan": "#0f1117",
@@ -99,6 +120,229 @@ RENK = {
     "kenarlik": "#2a2f42",
 }
 
+# TODO: Buraya gerçek Discord davet linkini koy — kullanıcı verdiğinde güncellenecek.
+DISCORD_URL = "https://discord.gg/BURAYA-DAVET-KODUNU-YAZ"
+
+YASAL_UYARI = (
+    "Bu program bağımsız, kişisel bir açık kaynak projesidir. Microsoft, Windows, "
+    "NVIDIA, AMD, Intel, Discord ve adı geçen diğer marka/şirketlerle HİÇBİR "
+    "resmi bağlantısı, ortaklığı veya onayı yoktur — bu marka adları yalnızca "
+    "uyumluluk/tanımlama amacıyla anılmıştır (nominative fair use). "
+    "Program yalnızca Windows'un kendi genel kullanıma açık API'lerini (registry, "
+    "WMI, GDI, PowerShell) okuma ve kullanıcının kendi izniyle değiştirme amacıyla "
+    "kullanır. 'Sistem Sağlığı' sekmesi kendi virüs tarama motorumuz DEĞİLDİR; "
+    "yalnızca Windows Defender'ın kendi durumunu ve sistem olay günlüğünü "
+    "okunabilir hale getirir — profesyonel bir güvenlik/antivirüs ürününün yerini "
+    "tutmaz. 'Ekran Rengi' sekmesi Windows'un kendi gamma-ramp API'sini kullanan, "
+    "bağımsız bir araçtır; herhangi bir üreticinin resmi kontrol panelinin parçası "
+    "değildir. 'Oyun Bildirimi' sekmesi de bağımsız bir araçtır; kullanıcının kendi "
+    "belirlediği bir işlem adının çalışıp çalışmadığını kontrol eden basit bir "
+    "bildirim mekanizmasıdır. Program HİÇBİR HAZIR MARKA "
+    "GÖRSELİ/İKON TELİF İÇERİĞİ İÇERMEZ; tüm simgeler ya sistemin kendi dosyalarına "
+    "referans ya da bu kodla çizilmiş basit vektör şekilleridir. Kullanıcı, "
+    "registry ve dosya sistemi üzerinde yapılan değişikliklerin sorumluluğunu "
+    "kabul eder; önemli değişikliklerden önce bir Sistem Geri Yükleme Noktası "
+    "oluşturulması önerilir. Program 'OLDUĞU GİBİ' (AS-IS), hiçbir garanti "
+    "verilmeksizin sunulur."
+)
+
+# ---------------------------------------------------------------------------
+# Çok Dilli Menü Desteği (7 dil)
+# ---------------------------------------------------------------------------
+DILLER = ["tr", "en", "ru", "es", "zh", "de", "it"]
+DIL_ISIMLERI = {
+    "tr": "Türkçe 🇹🇷", "en": "English 🇬🇧", "ru": "Русский 🇷🇺",
+    "es": "Español 🇪🇸", "zh": "中文 🇨🇳", "de": "Deutsch 🇩🇪", "it": "Italiano 🇮🇹",
+}
+
+TAB_SIRASI = [
+    "tema", "masaustu", "arkaplan", "imlec", "sistem_simgeleri", "gorev_cubugu",
+    "baslangic", "fare", "performans", "pano_gecmisi", "renk_secici",
+    "pencere_hizalama", "sistem_monitor", "dosya_arama", "dosya_guvenlik",
+    "sikistirma", "ekran_goruntusu", "sistem_bilgisi", "sistem_sagligi",
+    "ekran_rengi", "powertoys_ekstra", "oyun_bildirimi", "programlar", "fps",
+    "dil", "hakkinda",
+]
+
+CEVIRILER = {
+    "tema": {"tr": "🎨 Tema", "en": "🎨 Theme", "ru": "🎨 Тема", "es": "🎨 Tema",
+             "zh": "🎨 主题", "de": "🎨 Design", "it": "🎨 Tema"},
+    "masaustu": {"tr": "🖥 Masaüstü", "en": "🖥 Desktop", "ru": "🖥 Рабочий стол",
+                 "es": "🖥 Escritorio", "zh": "🖥 桌面", "de": "🖥 Desktop", "it": "🖥 Desktop"},
+    "arkaplan": {"tr": "🖼 Arka Plan", "en": "🖼 Background", "ru": "🖼 Фон",
+                 "es": "🖼 Fondo", "zh": "🖼 背景", "de": "🖼 Hintergrund", "it": "🖼 Sfondo"},
+    "imlec": {"tr": "🖱 İmleç", "en": "🖱 Cursor", "ru": "🖱 Курсор",
+              "es": "🖱 Cursor", "zh": "🖱 光标", "de": "🖱 Cursor", "it": "🖱 Cursore"},
+    "sistem_simgeleri": {"tr": "🗂 Simgeler/Logo", "en": "🗂 Icons/Logo", "ru": "🗂 Значки",
+                          "es": "🗂 Íconos", "zh": "🗂 图标", "de": "🗂 Symbole", "it": "🗂 Icone"},
+    "gorev_cubugu": {"tr": "📊 Görev Çubuğu", "en": "📊 Taskbar", "ru": "📊 Панель задач",
+                      "es": "📊 Barra de tareas", "zh": "📊 任务栏", "de": "📊 Taskleiste", "it": "📊 Barra"},
+    "baslangic": {"tr": "🚀 Başlangıç", "en": "🚀 Startup", "ru": "🚀 Автозагрузка",
+                  "es": "🚀 Inicio", "zh": "🚀 启动项", "de": "🚀 Autostart", "it": "🚀 Avvio"},
+    "fare": {"tr": "🖲 Fare", "en": "🖲 Mouse", "ru": "🖲 Мышь",
+             "es": "🖲 Ratón", "zh": "🖲 鼠标", "de": "🖲 Maus", "it": "🖲 Mouse"},
+    "performans": {"tr": "⚙ Performans", "en": "⚙ Performance", "ru": "⚙ Производительность",
+                    "es": "⚙ Rendimiento", "zh": "⚙ 性能", "de": "⚙ Leistung", "it": "⚙ Prestazioni"},
+    "pano_gecmisi": {"tr": "📋 Pano", "en": "📋 Clipboard", "ru": "📋 Буфер обмена",
+                      "es": "📋 Portapapeles", "zh": "📋 剪贴板", "de": "📋 Zwischenablage", "it": "📋 Appunti"},
+    "renk_secici": {"tr": "🎨 Renk Seçici", "en": "🎨 Color Picker", "ru": "🎨 Пипетка",
+                     "es": "🎨 Selector color", "zh": "🎨 取色器", "de": "🎨 Farbwähler", "it": "🎨 Selettore colore"},
+    "pencere_hizalama": {"tr": "🪟 Pencere", "en": "🪟 Window Snap", "ru": "🪟 Окна",
+                          "es": "🪟 Ventanas", "zh": "🪟 窗口", "de": "🪟 Fenster", "it": "🪟 Finestre"},
+    "sistem_monitor": {"tr": "📈 Monitör", "en": "📈 Monitor", "ru": "📈 Монитор",
+                        "es": "📈 Monitor", "zh": "📈 监视器", "de": "📈 Monitor", "it": "📈 Monitor"},
+    "dosya_arama": {"tr": "🔍 Dosya Arama", "en": "🔍 File Search", "ru": "🔍 Поиск файлов",
+                     "es": "🔍 Buscar archivos", "zh": "🔍 文件搜索", "de": "🔍 Dateisuche", "it": "🔍 Ricerca file"},
+    "dosya_guvenlik": {"tr": "🔒 Kilit/Gizle", "en": "🔒 Lock/Hide", "ru": "🔒 Блокировка",
+                        "es": "🔒 Bloquear", "zh": "🔒 锁定/隐藏", "de": "🔒 Sperren", "it": "🔒 Blocca"},
+    "sikistirma": {"tr": "🗜 Sıkıştırma", "en": "🗜 Compression", "ru": "🗜 Архивация",
+                    "es": "🗜 Compresión", "zh": "🗜 压缩", "de": "🗜 Komprimierung", "it": "🗜 Compressione"},
+    "ekran_goruntusu": {"tr": "📸 Ekran Gör.", "en": "📸 Screenshot", "ru": "📸 Скриншот",
+                         "es": "📸 Captura", "zh": "📸 截图", "de": "📸 Screenshot", "it": "📸 Schermata"},
+    "sistem_bilgisi": {"tr": "💻 Sistem Bilgisi", "en": "💻 System Info", "ru": "💻 О системе",
+                        "es": "💻 Info Sistema", "zh": "💻 系统信息", "de": "💻 Systeminfo", "it": "💻 Info Sistema"},
+    "sistem_sagligi": {"tr": "🛡 Sağlık", "en": "🛡 Health", "ru": "🛡 Безопасность",
+                        "es": "🛡 Salud", "zh": "🛡 系统健康", "de": "🛡 Sicherheit", "it": "🛡 Salute"},
+    "ekran_rengi": {"tr": "🌈 Ekran Rengi", "en": "🌈 Display Color", "ru": "🌈 Цвет экрана",
+                     "es": "🌈 Color pantalla", "zh": "🌈 屏幕颜色", "de": "🌈 Bildschirmfarbe", "it": "🌈 Colore schermo"},
+    "powertoys_ekstra": {"tr": "🧰 Ekstra", "en": "🧰 Extras", "ru": "🧰 Доп. инструменты",
+                          "es": "🧰 Extras", "zh": "🧰 附加工具", "de": "🧰 Extras", "it": "🧰 Extra"},
+    "oyun_bildirimi": {"tr": "🎮 Oyun Bildirimi", "en": "🎮 Game Alert", "ru": "🎮 Уведомление",
+                        "es": "🎮 Alerta juego", "zh": "🎮 游戏提醒", "de": "🎮 Spielbenachr.", "it": "🎮 Avviso gioco"},
+    "programlar": {"tr": "📦 Programlar", "en": "📦 Programs", "ru": "📦 Программы",
+                    "es": "📦 Programas", "zh": "📦 程序", "de": "📦 Programme", "it": "📦 Programmi"},
+    "fps": {"tr": "🎯 FPS", "en": "🎯 FPS", "ru": "🎯 FPS",
+            "es": "🎯 FPS", "zh": "🎯 帧率", "de": "🎯 FPS", "it": "🎯 FPS"},
+    "dil": {"tr": "🌐 Dil", "en": "🌐 Language", "ru": "🌐 Язык",
+            "es": "🌐 Idioma", "zh": "🌐 语言", "de": "🌐 Sprache", "it": "🌐 Lingua"},
+    "hakkinda": {"tr": "ℹ Hakkında", "en": "ℹ About", "ru": "ℹ О программе",
+                 "es": "ℹ Acerca de", "zh": "ℹ 关于", "de": "ℹ Info", "it": "ℹ Informazioni"},
+    "app_title": {
+        "tr": "⚡ Windows Özelleştirici — EFSANE Sürüm",
+        "en": "⚡ Windows Customizer — LEGENDARY Edition",
+        "ru": "⚡ Кастомайзер Windows — Легендарная версия",
+        "es": "⚡ Personalizador de Windows — Edición Legendaria",
+        "zh": "⚡ Windows 定制工具 — 传奇版",
+        "de": "⚡ Windows-Anpasser — Legendäre Edition",
+        "it": "⚡ Personalizzatore Windows — Edizione Leggendaria",
+    },
+    "banner_alt": {
+        "tr": "EFSANE SÜRÜM", "en": "LEGENDARY EDITION", "ru": "ЛЕГЕНДАРНАЯ ВЕРСИЯ",
+        "es": "EDICIÓN LEGENDARIA", "zh": "传奇版", "de": "LEGENDÄRE EDITION",
+        "it": "EDIZIONE LEGGENDARIA",
+    },
+    "dil_baslik": {"tr": "Dil / Language", "en": "Language", "ru": "Язык",
+                    "es": "Idioma", "zh": "语言", "de": "Sprache", "it": "Lingua"},
+    "dil_aciklama": {
+        "tr": "Ana başlığı, alt bilgi çubuğunu ve sekme (menü) isimlerini seçtiğin "
+              "dile çevirir. Not: Sekmelerin İÇİNDEKİ ayrıntılı metinler şu an için "
+              "Türkçe kalmaya devam ediyor — dürüst olmak gerekirse binlerce satırı "
+              "tek seferde tam çevirmek bu ölçekte pratik değil.",
+        "en": "Translates the main title, footer bar and tab (menu) names into your "
+              "chosen language. Note: the detailed text INSIDE each tab currently "
+              "stays in Turkish — fully translating thousands of lines at once "
+              "isn't practical at this scale, to be honest.",
+        "ru": "Переводит главный заголовок, нижнюю панель и названия вкладок на "
+              "выбранный язык. Примечание: подробный текст ВНУТРИ вкладок пока "
+              "остаётся на турецком — честно говоря, перевод тысяч строк сразу "
+              "непрактичен в таком масштабе.",
+        "es": "Traduce el título principal, la barra inferior y los nombres de las "
+              "pestañas al idioma elegido. Nota: el texto detallado DENTRO de cada "
+              "pestaña permanece en turco por ahora — traducir miles de líneas de "
+              "una vez no es práctico a esta escala, siendo honestos.",
+        "zh": "将主标题、底部栏和标签名称翻译成你选择的语言。注意:每个标签内部的"
+              "详细文本目前仍为土耳其语——老实说,一次性翻译数千行在这种规模下"
+              "并不现实。",
+        "de": "Übersetzt den Haupttitel, die Fußzeile und die Tab-Namen in die "
+              "gewählte Sprache. Hinweis: Der Text INNERHALB der Tabs bleibt "
+              "vorerst auf Türkisch — Tausende Zeilen auf einmal zu übersetzen "
+              "ist ehrlich gesagt nicht praktikabel.",
+        "it": "Traduce il titolo principale, la barra inferiore e i nomi delle "
+              "schede nella lingua scelta. Nota: il testo dettagliato ALL'INTERNO "
+              "di ogni scheda rimane per ora in turco — tradurre migliaia di "
+              "righe in una volta non è pratico a questa scala, onestamente.",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Kenar Çubuğu Menüsü (26 sekme için düz tab bar yerine — çok daha temiz görünür)
+# ttk.Notebook ile aynı arayüzü taklit eder: .add(frame, text=...) ve .tab(i, text=...)
+# ---------------------------------------------------------------------------
+class SidebarNotebook(tk.Frame):
+    def __init__(self, master, genislik=230, **kwargs):
+        super().__init__(master, bg=RENK["arkaplan"], **kwargs)
+
+        self.kenar_disi = tk.Frame(self, bg=RENK["panel"], width=genislik)
+        self.kenar_disi.pack(side="left", fill="y")
+        self.kenar_disi.pack_propagate(False)
+
+        self._canvas = tk.Canvas(self.kenar_disi, bg=RENK["panel"], highlightthickness=0,
+                                  width=genislik)
+        self._scrollbar = ttk.Scrollbar(self.kenar_disi, orient="vertical", command=self._canvas.yview)
+        self._ic_frame = tk.Frame(self._canvas, bg=RENK["panel"])
+        self._ic_frame.bind(
+            "<Configure>", lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        )
+        self._canvas_pencere = self._canvas.create_window((0, 0), window=self._ic_frame, anchor="nw")
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        self._scrollbar.pack(side="right", fill="y")
+
+        def _tekerlek(event):
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _tekerlek_baglan(event):
+            self._canvas.bind_all("<MouseWheel>", _tekerlek)
+
+        def _tekerlek_ayir(event):
+            self._canvas.unbind_all("<MouseWheel>")
+
+        self._canvas.bind("<Enter>", _tekerlek_baglan)
+        self._canvas.bind("<Leave>", _tekerlek_ayir)
+
+        self.icerik = tk.Frame(self, bg=RENK["arkaplan"])
+        self.icerik.pack(side="left", fill="both", expand=True)
+
+        self._sekmeler = []  # [(buton, frame), ...]
+        self._aktif_index = None
+
+    def add(self, frame, text=""):
+        idx = len(self._sekmeler)
+        buton = tk.Label(
+            self._ic_frame, text=text, bg=RENK["panel"], fg=RENK["metin_gri"],
+            font=("Segoe UI", 10), anchor="w", padx=16, pady=9, cursor="hand2",
+        )
+        buton.pack(fill="x")
+        buton.bind("<Button-1>", lambda e, i=idx: self.select(i))
+        buton.bind("<Enter>", lambda e, b=buton, i=idx: self._hover(b, i, True))
+        buton.bind("<Leave>", lambda e, b=buton, i=idx: self._hover(b, i, False))
+        self._sekmeler.append([buton, frame])
+        if idx == 0:
+            self.select(0)
+        return frame
+
+    def _hover(self, buton, idx, giriyor):
+        if idx == self._aktif_index:
+            return
+        buton.config(bg=RENK["panel2"] if giriyor else RENK["panel"])
+
+    def select(self, idx):
+        if idx == self._aktif_index or not (0 <= idx < len(self._sekmeler)):
+            return
+        if self._aktif_index is not None:
+            eski_buton, eski_frame = self._sekmeler[self._aktif_index]
+            eski_frame.pack_forget()
+            eski_buton.config(bg=RENK["panel"], fg=RENK["metin_gri"], font=("Segoe UI", 10))
+        buton, frame = self._sekmeler[idx]
+        frame.pack(in_=self.icerik, fill="both", expand=True)
+        buton.config(bg=RENK["vurgu"], fg="#ffffff", font=("Segoe UI", 10, "bold"))
+        self._aktif_index = idx
+
+    def tab(self, index, text=None, **kwargs):
+        if text is not None and 0 <= index < len(self._sekmeler):
+            self._sekmeler[index][0].config(text=text)
+
 
 # ---------------------------------------------------------------------------
 # Ana Uygulama
@@ -108,7 +352,7 @@ class WindowsOzellestiriciApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("⚡ Windows Özelleştirici — EFSANE Sürüm")
-        self.geometry("680x680")
+        self.geometry("1000x760")
         self.resizable(False, False)
         self.configure(bg=RENK["arkaplan"])
 
@@ -124,13 +368,17 @@ class WindowsOzellestiriciApp(tk.Tk):
                 "inceleyebilirsin).",
             )
 
-        notebook = ttk.Notebook(self, style="Efsane.TNotebook")
-        notebook.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        self._alt_bilgi_cubugu()
+
+        notebook = SidebarNotebook(self)
+        notebook.pack(fill="both", expand=True, padx=14, pady=(0, 6))
+        self.notebook = notebook
 
         self.tema_sekmesi(notebook)
         self.masaustu_sekmesi(notebook)
         self.arkaplan_sekmesi(notebook)
         self.imlec_sekmesi(notebook)
+        self.sistem_simgeleri_sekmesi(notebook)
         self.gorev_cubugu_sekmesi(notebook)
         self.baslangic_sekmesi(notebook)
         self.fare_sekmesi(notebook)
@@ -140,8 +388,18 @@ class WindowsOzellestiriciApp(tk.Tk):
         self.pencere_hizalama_sekmesi(notebook)
         self.sistem_monitor_sekmesi(notebook)
         self.dosya_arama_sekmesi(notebook)
+        self.dosya_guvenlik_sekmesi(notebook)
+        self.sikistirma_sekmesi(notebook)
         self.ekran_goruntusu_sekmesi(notebook)
+        self.sistem_bilgisi_sekmesi(notebook)
+        self.sistem_sagligi_sekmesi(notebook)
+        self.ekran_rengi_sekmesi(notebook)
+        self.powertoys_ekstra_sekmesi(notebook)
+        self.oyun_bildirimi_sekmesi(notebook)
+        self.programlar_sekmesi(notebook)
         self.fps_sekmesi(notebook)
+        self.dil_sekmesi(notebook)
+        self.hakkinda_sekmesi(notebook)
 
         # Arka planda çalışan yardımcı iş parçacıkları için durum bayrakları
         self._pano_calisiyor = False
@@ -155,9 +413,15 @@ class WindowsOzellestiriciApp(tk.Tk):
         self._slideshow_calisiyor = False
         self._fps_gosterge_penceresi = None
         self._fps_calisiyor = False
+        self._uyanik_tut_aktif = False
+        self._baslangic_menusu_indeksi = []
+        self._izlenen_islemler = []
+        self._oyun_izleme_aktif = False
+        self._mevcut_dil = "tr"
 
         self._pano_izlemeyi_baslat()
         self._pencere_takibini_baslat()
+        self._dili_uygula("tr")
         self.protocol("WM_DELETE_WINDOW", self._kapanirken)
 
     def _kapanirken(self):
@@ -165,6 +429,12 @@ class WindowsOzellestiriciApp(tk.Tk):
         self._pencere_takip_calisiyor = False
         self._slideshow_calisiyor = False
         self._fps_calisiyor = False
+        self._oyun_izleme_aktif = False
+        if self._uyanik_tut_aktif and IS_WINDOWS:
+            try:
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # ES_CONTINUOUS
+            except Exception:
+                pass
         self.destroy()
 
     # ------------------------------------------------------------------
@@ -234,7 +504,7 @@ class WindowsOzellestiriciApp(tk.Tk):
         banner = tk.Canvas(self, height=64, bg=RENK["arkaplan"], highlightthickness=0)
         banner.pack(fill="x", padx=0, pady=0)
 
-        genislik = 680
+        genislik = 1000
         adim = 40
         renk1 = self._hex_to_rgb(RENK["vurgu"])
         renk2 = self._hex_to_rgb(RENK["vurgu2"])
@@ -245,12 +515,13 @@ class WindowsOzellestiriciApp(tk.Tk):
             b = int(renk1[2] + (renk2[2] - renk1[2]) * oran)
             banner.create_rectangle(i, 0, i + adim + 1, 64, fill=f"#{r:02x}{g:02x}{b:02x}", width=0)
 
-        banner.create_text(
+        self._banner_canvas = banner
+        self._banner_baslik_id = banner.create_text(
             22, 32, anchor="w", text="⚡ WINDOWS ÖZELLEŞTİRİCİ",
             fill="#ffffff", font=("Segoe UI", 17, "bold"),
         )
-        banner.create_text(
-            600, 32, anchor="e", text="EFSANE SÜRÜM", fill="#ffffff",
+        self._banner_alt_id = banner.create_text(
+            920, 32, anchor="e", text="EFSANE SÜRÜM", fill="#ffffff",
             font=("Segoe UI", 9, "bold"),
         )
 
@@ -258,6 +529,41 @@ class WindowsOzellestiriciApp(tk.Tk):
     def _hex_to_rgb(hex_kod):
         hex_kod = hex_kod.lstrip("#")
         return tuple(int(hex_kod[i:i + 2], 16) for i in (0, 2, 4))
+
+    def _alt_bilgi_cubugu(self):
+        """Ekranın altında, tıklanabilir bir Discord 'logosu' içeren ince şerit."""
+        cubuk = tk.Frame(self, bg=RENK["panel"], height=42)
+        cubuk.pack(side="bottom", fill="x")
+        cubuk.pack_propagate(False)
+
+        sol = tk.Label(
+            cubuk, text="⚡ Windows Özelleştirici — Efsane Sürüm",
+            bg=RENK["panel"], fg=RENK["metin_gri"], font=("Segoe UI", 8),
+        )
+        sol.pack(side="left", padx=14)
+        self._footer_sol_label = sol
+
+        # Basit, vektörle çizilmiş Discord tarzı "logo" (blurple daire + D harfi)
+        discord_canvas = tk.Canvas(cubuk, width=26, height=26, bg=RENK["panel"], highlightthickness=0,
+                                    cursor="hand2")
+        discord_canvas.pack(side="right", padx=(0, 6), pady=8)
+        discord_canvas.create_oval(1, 1, 25, 25, fill="#5865F2", outline="")
+        discord_canvas.create_text(13, 13, text="D", fill="#ffffff", font=("Segoe UI", 11, "bold"))
+
+        discord_yazi = tk.Label(
+            cubuk, text="💬 Discord Sunucumuza Katıl", bg=RENK["panel"], fg="#5865F2",
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+        )
+        discord_yazi.pack(side="right", padx=(0, 4), pady=8)
+
+        def discord_ac(event=None):
+            try:
+                webbrowser.open(DISCORD_URL)
+            except Exception as e:
+                messagebox.showerror("Hata", str(e))
+
+        discord_canvas.bind("<Button-1>", discord_ac)
+        discord_yazi.bind("<Button-1>", discord_ac)
 
     # ------------------------------------------------------------------
     # 1) Tema (Açık / Koyu mod + vurgu rengi)
@@ -574,6 +880,58 @@ class WindowsOzellestiriciApp(tk.Tk):
             anchor="w", padx=15, pady=15
         )
 
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=15, pady=15)
+
+        ttk.Label(frame, text="İmleç Şekli (Rol Bazlı Özel Dosya)", style="Baslik.TLabel").pack(
+            anchor="w", padx=15
+        )
+        ttk.Label(
+            frame,
+            text="Belirli bir imleç rolüne (ör. normal ok, el işareti) kendi .cur/.ani "
+                 "dosyanı ata.",
+            foreground=RENK["metin_gri"], wraplength=560, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 8))
+
+        rol_cercevesi = ttk.Frame(frame)
+        rol_cercevesi.pack(anchor="w", padx=15, pady=5)
+        ttk.Label(rol_cercevesi, text="Rol:").grid(row=0, column=0, sticky="w")
+        self.imlec_rol_combo = ttk.Combobox(
+            rol_cercevesi, state="readonly", width=26, values=list(IMLEC_ROLLERI.keys())
+        )
+        self.imlec_rol_combo.current(0)
+        self.imlec_rol_combo.grid(row=0, column=1, padx=8)
+        ttk.Button(rol_cercevesi, text="📂 .cur/.ani Seç ve Uygula", command=self._imlec_rolunu_uygula).grid(
+            row=0, column=2, padx=8
+        )
+
+    def _imlec_rolunu_uygula(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        rol_adi = self.imlec_rol_combo.get()
+        deger_adi = IMLEC_ROLLERI.get(rol_adi)
+        if not deger_adi:
+            return
+        path = filedialog.askopenfilename(
+            title=f"'{rol_adi}' için imleç dosyası seç",
+            filetypes=[("İmleç Dosyaları", "*.cur *.ani")],
+        )
+        if not path:
+            return
+        try:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, CURSORS_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.SetValueEx(key, deger_adi, 0, winreg.REG_EXPAND_SZ, path)
+                # Özel bir kombinasyon yaptığımız için şema adını da temizleyelim
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "")
+            SPI_SETCURSORS = 0x0057
+            ctypes.windll.user32.SystemParametersInfoW(SPI_SETCURSORS, 0, None, 0)
+            messagebox.showinfo("Başarılı", f"'{rol_adi}' imleci güncellendi.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 2) Masaüstü (simgeler)
+    # ------------------------------------------------------------------
     def _imlec_semasini_uygula(self):
         if not IS_WINDOWS:
             messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
@@ -941,12 +1299,12 @@ class WindowsOzellestiriciApp(tk.Tk):
         ttk.Label(
             frame,
             text=(
-                "Not: 'Lossless Scaling' benzeri gerçek kare üretimi (frame generation) /\n"
-                "yapay zeka tabanlı üst ölçekleme, GPU'nun shader'larını kullanan ayrı bir\n"
-                "grafik motoru gerektirir — registry ayarıyla yapılamaz. Bunun için "
-                "GPU üreticinin\n(NVIDIA/AMD/Intel) sürücü ayarlarındaki 'Frame Generation' / "
-                "'Görüntü Ölçekleme'\nözelliğini ya da özel bir uygulamayı kullanman gerekir. "
-                "Bu programın yapabildiği,\nbu tür ayarlara giden Windows ayarlarını hızlıca açmak."
+                "Not: Gerçek kare üretimi (frame generation) / yapay zeka tabanlı üst\n"
+                "ölçekleme, GPU'nun shader'larını kullanan ayrı bir grafik motoru\n"
+                "gerektirir — registry ayarıyla yapılamaz. Bunun için GPU üreticinin\n"
+                "(NVIDIA/AMD/Intel) kendi sürücü ayarlarındaki ilgili özelliği ya da "
+                "özel bir\nuygulamayı kullanman gerekir. Bu programın yapabildiği, bu tür "
+                "ayarlara\ngiden Windows ayarlarını hızlıca açmak."
             ),
             foreground="gray",
             justify="left",
@@ -1068,13 +1426,13 @@ class WindowsOzellestiriciApp(tk.Tk):
 
 
     # ------------------------------------------------------------------
-    # 7) Pano Geçmişi (Ditto benzeri) — tamamen yerli, ek paket gerekmez
+    # 7) Pano Geçmişi — tamamen yerli, ek paket gerekmez
     # ------------------------------------------------------------------
     def pano_gecmisi_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text="Pano Geçmişi")
 
-        ttk.Label(frame, text="Pano Geçmişi ", style="Baslik.TLabel").pack(
+        ttk.Label(frame, text="Pano Geçmişi", style="Baslik.TLabel").pack(
             anchor="w", padx=15, pady=(15, 5)
         )
         ttk.Label(
@@ -1156,7 +1514,7 @@ class WindowsOzellestiriciApp(tk.Tk):
         self._pano_listesini_guncelle()
 
     # ------------------------------------------------------------------
-    # 8) Renk Seçici (PowerToys Color Picker benzeri) — ctypes/GDI ile
+    # 8) Renk Seçici — ctypes/GDI ile
     # ------------------------------------------------------------------
     def renk_secici_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
@@ -1287,13 +1645,13 @@ class WindowsOzellestiriciApp(tk.Tk):
             self.after(1500, lambda: self.title("⚡ Windows Özelleştirici — EFSANE Sürüm"))
 
     # ------------------------------------------------------------------
-    # 9) Pencere Hizalama (PowerToys FancyZones benzeri) — ctypes/user32
+    # 9) Pencere Hizalama — ctypes/user32
     # ------------------------------------------------------------------
     def pencere_hizalama_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text="Pencere Hizalama")
 
-        ttk.Label(frame, text="Pencere Hizalama ", style="Baslik.TLabel").pack(
+        ttk.Label(frame, text="Pencere Hizalama", style="Baslik.TLabel").pack(
             anchor="w", padx=15, pady=(15, 5)
         )
         ttk.Label(
@@ -1407,13 +1765,13 @@ class WindowsOzellestiriciApp(tk.Tk):
             messagebox.showerror("Hata", str(e))
 
     # ------------------------------------------------------------------
-    # 10) Mini Sistem Monitörü (Rainmeter benzeri) — ctypes/kernel32
+    # 10) Mini Sistem Monitörü — ctypes/kernel32
     # ------------------------------------------------------------------
     def sistem_monitor_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text="Sistem Monitörü")
 
-        ttk.Label(frame, text="Mini Sistem Monitörü ", style="Baslik.TLabel").pack(
+        ttk.Label(frame, text="Mini Sistem Monitörü", style="Baslik.TLabel").pack(
             anchor="w", padx=15, pady=(15, 5)
         )
         ttk.Label(
@@ -1578,21 +1936,20 @@ class WindowsOzellestiriciApp(tk.Tk):
         guncelle_dongu()
 
     # ------------------------------------------------------------------
-    # 11) Hızlı Dosya Arama (Everything benzeri, basit indeksleme)
+    # 11) Hızlı Dosya Arama — basit indeksleme
     # ------------------------------------------------------------------
     def dosya_arama_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text="Dosya Arama")
 
-        ttk.Label(frame, text="Hızlı Dosya Arama ", style="Baslik.TLabel").pack(
+        ttk.Label(frame, text="Hızlı Dosya Arama", style="Baslik.TLabel").pack(
             anchor="w", padx=15, pady=(15, 5)
         )
         ttk.Label(
             frame,
-            text="Not: Gerçek Everything, NTFS disk kaydını (MFT) doğrudan okuyarak "
-                 "anında sonuç verir. Bu basit sürüm ise seçtiğin klasörü tarayıp "
-                 "bellekte bir liste oluşturur — büyük disklerde ilk tarama biraz sürer, "
-                 "ama tarama bitince arama anlık olur.",
+            text="Not: NTFS disk kaydını (MFT) doğrudan okumaz — seçtiğin klasörü "
+                 "tarayıp bellekte bir liste oluşturur. Büyük disklerde ilk tarama "
+                 "biraz sürer, ama tarama bitince arama anlık olur.",
             foreground="gray", wraplength=560, justify="left",
         ).pack(anchor="w", padx=15, pady=(0, 10))
 
@@ -1693,13 +2050,13 @@ class WindowsOzellestiriciApp(tk.Tk):
             messagebox.showerror("Hata", str(e))
 
     # ------------------------------------------------------------------
-    # 12) Ekran Görüntüsü (ShareX benzeri) — ctypes/GDI, ek paket gerekmez
+    # 12) Ekran Görüntüsü — ctypes/GDI, ek paket gerekmez
     # ------------------------------------------------------------------
     def ekran_goruntusu_sekmesi(self, notebook):
         frame = ttk.Frame(notebook)
         notebook.add(frame, text="Ekran Görüntüsü")
 
-        ttk.Label(frame, text="Ekran Görüntüsü Aracı ", style="Baslik.TLabel").pack(
+        ttk.Label(frame, text="Ekran Görüntüsü Aracı", style="Baslik.TLabel").pack(
             anchor="w", padx=15, pady=(15, 5)
         )
         ttk.Label(
@@ -1811,11 +2168,10 @@ class WindowsOzellestiriciApp(tk.Tk):
         ttk.Label(
             frame,
             text="Ekranın sol üst köşesinde, her zaman üstte duran, saydam arka planlı "
-                 "küçük bir FPS/Hz göstergesi açar. Not: Bu, tam ekran (exclusive fullscreen) "
-                 "DirectX oyunlarına gömülen RTSS/MSI Afterburner gibi gerçek bir render-hook "
-                 "değildir — masaüstü görüntüsündeki piksel değişim hızını ölçerek YAKLAŞIK "
-                 "bir kare hızı tahmini yapar. En doğru sonuç için oyunu pencereli/kenarlıksız "
-                 "pencere modunda çalıştır.",
+                 "küçük bir FPS/Hz göstergesi açar. Not: Bu, oyunun render motoruna "
+                 "gömülen gerçek bir performans katmanı değildir — masaüstü görüntüsündeki "
+                 "piksel değişim hızını ölçerek YAKLAŞIK bir kare hızı tahmini yapar. "
+                 "En doğru sonuç için oyunu pencereli/kenarlıksız pencere modunda çalıştır.",
             foreground=RENK["metin_gri"], wraplength=580, justify="left",
         ).pack(anchor="w", padx=15, pady=(0, 10))
 
@@ -2031,6 +2387,1117 @@ class WindowsOzellestiriciApp(tk.Tk):
     def _fps_overlay_konumu_sifirla(self):
         if self._fps_gosterge_penceresi is not None:
             self._fps_gosterge_penceresi.geometry("+12+12")
+
+
+    # ------------------------------------------------------------------
+    # 14) Sistem Simgeleri (Bu Bilgisayar / Çöp Kutusu / Ağ) + Uygulama Logosu
+    # ------------------------------------------------------------------
+    def sistem_simgeleri_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="Simgeler / Logo")
+
+        ttk.Label(frame, text="Sistem Simgelerini Değiştir", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Masaüstündeki 'Bu Bilgisayar', 'Çöp Kutusu' ve 'Ağ' simgelerini "
+                 "kendi .ico dosyanla değiştir.",
+            foreground=RENK["metin_gri"], wraplength=560, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        simge_hedefleri = [
+            ("Çöp Kutusu (Boş)", "{645FF040-5081-101B-9F08-00AA002F954E}", "empty"),
+            ("Çöp Kutusu (Dolu)", "{645FF040-5081-101B-9F08-00AA002F954E}", "full"),
+            ("Bu Bilgisayar", "{20D04FE0-3AEA-1069-A2D8-08002B30309D}", None),
+            ("Ağ", "{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}", None),
+            ("Kullanıcı Klasörü", "{59031a47-3f72-44a7-89c5-5595fe6b30ee}", None),
+        ]
+        for etiket, clsid, alt_deger in simge_hedefleri:
+            satir = ttk.Frame(frame)
+            satir.pack(fill="x", padx=15, pady=3)
+            ttk.Label(satir, text=etiket, width=22).pack(side="left")
+            ttk.Button(
+                satir, text="📂 .ico Seç ve Uygula",
+                command=lambda c=clsid, a=alt_deger, e=etiket: self._sistem_simgesi_uygula(c, a, e),
+            ).pack(side="left", padx=5)
+
+        ttk.Button(frame, text="↺ Tüm Sistem Simgelerini Varsayılana Sıfırla",
+                   command=self._sistem_simgelerini_sifirla).pack(anchor="w", padx=15, pady=15)
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=15, pady=15)
+
+        ttk.Label(frame, text="Uygulama Logosu (Bu Programın İkonu)", style="Baslik.TLabel").pack(
+            anchor="w", padx=15
+        )
+        ttk.Label(
+            frame,
+            text="Bu özelleştirme programının kendi pencere/görev çubuğu simgesini değiştir.",
+            foreground=RENK["metin_gri"], wraplength=560, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 8))
+        ttk.Button(frame, text="🖼 Uygulama Logosunu Değiştir (.ico)", command=self._uygulama_logosunu_degistir).pack(
+            anchor="w", padx=15, pady=5
+        )
+
+    def _sistem_simgesi_uygula(self, clsid, alt_deger, etiket):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        path = filedialog.askopenfilename(title=f"{etiket} için .ico dosyası seç",
+                                           filetypes=[("Simge Dosyası", "*.ico")])
+        if not path:
+            return
+        try:
+            anahtar_yolu = rf"Software\Classes\CLSID\{clsid}\DefaultIcon"
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, anahtar_yolu, 0, winreg.KEY_SET_VALUE) as key:
+                deger_adi = alt_deger if alt_deger else ""
+                winreg.SetValueEx(key, deger_adi, 0, winreg.REG_EXPAND_SZ, path)
+            restart_explorer()
+            messagebox.showinfo("Başarılı", f"{etiket} simgesi güncellendi.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _sistem_simgelerini_sifirla(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        clsidler = [
+            "{645FF040-5081-101B-9F08-00AA002F954E}",
+            "{20D04FE0-3AEA-1069-A2D8-08002B30309D}",
+            "{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}",
+            "{59031a47-3f72-44a7-89c5-5595fe6b30ee}",
+        ]
+        try:
+            for clsid in clsidler:
+                anahtar_yolu = rf"Software\Classes\CLSID\{clsid}\DefaultIcon"
+                try:
+                    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, anahtar_yolu)
+                except FileNotFoundError:
+                    pass
+            restart_explorer()
+            messagebox.showinfo("Başarılı", "Sistem simgeleri varsayılana sıfırlandı.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _uygulama_logosunu_degistir(self):
+        path = filedialog.askopenfilename(title="Uygulama logosu seç", filetypes=[("Simge Dosyası", "*.ico")])
+        if not path:
+            return
+        try:
+            self.iconbitmap(path)
+            messagebox.showinfo("Başarılı", "Uygulama logosu değiştirildi.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Logo uygulanamadı: {e}")
+
+    # ------------------------------------------------------------------
+    # 15) Dosya Kilitleme & Gizleme
+    # ------------------------------------------------------------------
+    def dosya_guvenlik_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="Dosya Kilit/Gizle")
+
+        ttk.Label(frame, text="Dosya / Klasör Gizleme", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Windows dosya özniteliğini (attribute) değiştirerek dosyayı normal "
+                 "gezginde görünmez yapar. 'Gizli öğeleri göster' açıksa yine görülebilir.",
+            foreground=RENK["metin_gri"], wraplength=560, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 8))
+
+        gizle_cercevesi = ttk.Frame(frame)
+        gizle_cercevesi.pack(anchor="w", padx=15, pady=5)
+        ttk.Button(gizle_cercevesi, text="🙈 Dosya/Klasör Gizle", command=self._dosyayi_gizle).grid(
+            row=0, column=0, padx=5
+        )
+        ttk.Button(gizle_cercevesi, text="👁 Dosya/Klasör Göster", command=self._dosyayi_goster).grid(
+            row=0, column=1, padx=5
+        )
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=15, pady=15)
+
+        ttk.Label(frame, text="Dosya / Klasör Kilitleme (Erişim İzni)", style="Baslik.TLabel").pack(
+            anchor="w", padx=15
+        )
+        ttk.Label(
+            frame,
+            text="Windows'un yerleşik izin sistemini (icacls) kullanarak dosyaya kendi "
+                 "kullanıcı hesabından erişimi reddeder — şifreleme değildir, bir "
+                 "yönetici hesabı yine de erişebilir, ama günlük kullanımda dosyayı "
+                 "açılamaz hale getirir.",
+            foreground=RENK["metin_gri"], wraplength=560, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 8))
+
+        kilit_cercevesi = ttk.Frame(frame)
+        kilit_cercevesi.pack(anchor="w", padx=15, pady=5)
+        ttk.Button(kilit_cercevesi, text="🔒 Dosya/Klasör Kilitle", command=self._dosyayi_kilitle).grid(
+            row=0, column=0, padx=5
+        )
+        ttk.Button(kilit_cercevesi, text="🔓 Kilidi Aç", command=self._dosyayi_kilidini_ac).grid(
+            row=0, column=1, padx=5
+        )
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=15, pady=15)
+        ttk.Label(frame, text="İşlem Günlüğü", style="AltBaslik.TLabel").pack(anchor="w", padx=15)
+        self.guvenlik_log = tk.Text(frame, height=8, width=75, bg=RENK["panel2"], fg=RENK["metin"],
+                                     insertbackground=RENK["metin"], borderwidth=0)
+        self.guvenlik_log.pack(padx=15, pady=5, fill="both")
+        self.guvenlik_log.configure(state="disabled")
+
+    def _guvenlik_log_yaz(self, satir):
+        self.guvenlik_log.configure(state="normal")
+        self.guvenlik_log.insert(tk.END, satir + "\n")
+        self.guvenlik_log.see(tk.END)
+        self.guvenlik_log.configure(state="disabled")
+
+    def _dosya_veya_klasor_sec(self):
+        path = filedialog.askopenfilename(title="Dosya seç (klasör için iptal edip klasör seçebilirsin)")
+        if not path:
+            path = filedialog.askdirectory(title="Klasör seç")
+        return path
+
+    def _dosyayi_gizle(self):
+        path = self._dosya_veya_klasor_sec()
+        if not path:
+            return
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        try:
+            FILE_ATTRIBUTE_HIDDEN = 0x02
+            mevcut = ctypes.windll.kernel32.GetFileAttributesW(path)
+            ctypes.windll.kernel32.SetFileAttributesW(path, mevcut | FILE_ATTRIBUTE_HIDDEN)
+            self._guvenlik_log_yaz(f"[Gizlendi] {path}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _dosyayi_goster(self):
+        path = self._dosya_veya_klasor_sec()
+        if not path:
+            return
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        try:
+            FILE_ATTRIBUTE_HIDDEN = 0x02
+            mevcut = ctypes.windll.kernel32.GetFileAttributesW(path)
+            ctypes.windll.kernel32.SetFileAttributesW(path, mevcut & ~FILE_ATTRIBUTE_HIDDEN)
+            self._guvenlik_log_yaz(f"[Gösterildi] {path}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _dosyayi_kilitle(self):
+        path = self._dosya_veya_klasor_sec()
+        if not path:
+            return
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        try:
+            kullanici = os.environ.get("USERNAME", "")
+            sonuc = subprocess.run(
+                ["icacls", path, "/deny", f"{kullanici}:(R,W)"],
+                capture_output=True, text=True,
+            )
+            self._guvenlik_log_yaz(f"[Kilitlendi] {path}\n  {sonuc.stdout.strip() or sonuc.stderr.strip()}")
+            messagebox.showinfo("Başarılı", "Dosya/klasör kilitlendi.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _dosyayi_kilidini_ac(self):
+        path = self._dosya_veya_klasor_sec()
+        if not path:
+            return
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        try:
+            kullanici = os.environ.get("USERNAME", "")
+            sonuc = subprocess.run(
+                ["icacls", path, "/remove:d", kullanici],
+                capture_output=True, text=True,
+            )
+            self._guvenlik_log_yaz(f"[Kilit Açıldı] {path}\n  {sonuc.stdout.strip() or sonuc.stderr.strip()}")
+            messagebox.showinfo("Başarılı", "Dosya/klasörün kilidi açıldı.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 16) Sistem Bilgisi
+    # ------------------------------------------------------------------
+    def sistem_bilgisi_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="Sistem Bilgisi")
+
+        ttk.Label(frame, text="Sistem Bilgisi", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+
+        ttk.Button(frame, text="🔄 Bilgileri Yenile", command=self._sistem_bilgisini_yenile).pack(
+            anchor="w", padx=15, pady=5
+        )
+
+        self.sistem_bilgi_text = tk.Text(
+            frame, height=22, width=75, bg=RENK["panel2"], fg=RENK["metin"],
+            insertbackground=RENK["metin"], borderwidth=0, font=("Consolas", 10),
+        )
+        self.sistem_bilgi_text.pack(padx=15, pady=10, fill="both")
+        self.sistem_bilgi_text.insert("1.0", "Bilgileri görmek için 'Bilgileri Yenile' butonuna bas...")
+        self.sistem_bilgi_text.configure(state="disabled")
+
+    def _powershell_calistir(self, komut, timeout=10):
+        try:
+            sonuc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", komut],
+                capture_output=True, text=True, timeout=timeout,
+            )
+            return sonuc.stdout.strip()
+        except Exception:
+            return ""
+
+    def _sistem_bilgisini_yenile(self):
+        self.sistem_bilgi_text.configure(state="normal")
+        self.sistem_bilgi_text.delete("1.0", tk.END)
+        self.sistem_bilgi_text.insert(tk.END, "Toplanıyor, lütfen bekle (birkaç saniye sürebilir)...\n")
+        self.sistem_bilgi_text.configure(state="disabled")
+
+        def topla():
+            import platform
+            s = []
+            s.append("── İŞLETİM SİSTEMİ ──────────────────────────")
+            s.append(f"OS               : {platform.system()} {platform.release()}")
+            s.append(f"Sürüm Detayı     : {platform.version()}")
+            s.append(f"Bilgisayar Adı   : {os.environ.get('COMPUTERNAME', '-')}")
+            s.append(f"Kullanıcı Adı    : {os.environ.get('USERNAME', '-')}")
+            s.append(f"Mimari           : {platform.machine()}")
+
+            if IS_WINDOWS:
+                s.append("")
+                s.append("── İŞLEMCİ (CPU) ────────────────────────────")
+                cpu_adi = self._powershell_calistir("(Get-CimInstance Win32_Processor).Name")
+                if cpu_adi:
+                    s.append(f"Model            : {cpu_adi}")
+                cekirdek = self._powershell_calistir(
+                    "(Get-CimInstance Win32_Processor).NumberOfCores"
+                )
+                thread = self._powershell_calistir(
+                    "(Get-CimInstance Win32_Processor).NumberOfLogicalProcessors"
+                )
+                hiz = self._powershell_calistir(
+                    "(Get-CimInstance Win32_Processor).MaxClockSpeed"
+                )
+                if cekirdek or thread:
+                    s.append(f"Çekirdek/Thread  : {cekirdek or '?'} çekirdek / {thread or '?'} thread")
+                if hiz:
+                    s.append(f"Maks. Hız        : {hiz} MHz")
+
+                s.append("")
+                s.append("── EKRAN KARTI (GPU) ────────────────────────")
+                gpu_adlari = self._powershell_calistir(
+                    "(Get-CimInstance Win32_VideoController) | ForEach-Object { $_.Name }"
+                )
+                vram_listesi = self._powershell_calistir(
+                    "(Get-CimInstance Win32_VideoController) | "
+                    "ForEach-Object { [math]::Round($_.AdapterRAM/1GB,1) }"
+                )
+                surucu_listesi = self._powershell_calistir(
+                    "(Get-CimInstance Win32_VideoController) | ForEach-Object { $_.DriverVersion }"
+                )
+                if gpu_adlari:
+                    gpu_satirlari = gpu_adlari.splitlines()
+                    vram_satirlari = vram_listesi.splitlines() if vram_listesi else []
+                    surucu_satirlari = surucu_listesi.splitlines() if surucu_listesi else []
+                    for i, ad in enumerate(gpu_satirlari):
+                        satir = f"GPU {i + 1}            : {ad.strip()}"
+                        if i < len(vram_satirlari) and vram_satirlari[i].strip() not in ("0", ""):
+                            satir += f"  (~{vram_satirlari[i].strip()} GB VRAM)"
+                        s.append(satir)
+                        if i < len(surucu_satirlari) and surucu_satirlari[i].strip():
+                            s.append(f"   Sürücü Sürümü : {surucu_satirlari[i].strip()}")
+
+                s.append("")
+                s.append("── BELLEK / DEPOLAMA ────────────────────────")
+                try:
+                    ram_yuzde, ram_gb = self._ram_kullanimi_al()
+                    s.append(f"RAM (Toplam)     : {ram_gb:.1f} GB   (Kullanım: %{ram_yuzde})")
+                except Exception:
+                    pass
+                try:
+                    disk_yuzde, bos_gb, toplam_gb = self._disk_kullanimi_al("C:\\")
+                    s.append(
+                        f"C: Diski         : {toplam_gb:.0f} GB toplam, {bos_gb:.0f} GB boş "
+                        f"(Kullanım: %{disk_yuzde:.0f})"
+                    )
+                except Exception:
+                    pass
+                disk_modelleri = self._powershell_calistir(
+                    "(Get-CimInstance Win32_DiskDrive) | ForEach-Object { $_.Model }"
+                )
+                if disk_modelleri:
+                    for i, model in enumerate(disk_modelleri.splitlines()):
+                        s.append(f"Disk {i + 1} Modeli   : {model.strip()}")
+
+                s.append("")
+                s.append("── ANAKART / BIOS ────────────────────────────")
+                anakart = self._powershell_calistir(
+                    "(Get-CimInstance Win32_BaseBoard).Product"
+                )
+                bios = self._powershell_calistir(
+                    "(Get-CimInstance Win32_BIOS).SMBIOSBIOSVersion"
+                )
+                if anakart:
+                    s.append(f"Anakart          : {anakart}")
+                if bios:
+                    s.append(f"BIOS Sürümü      : {bios}")
+
+                s.append("")
+                s.append("── EKRAN ─────────────────────────────────────")
+                hz = self._monitor_yenileme_hizi_al()
+                if hz:
+                    s.append(f"Monitör Hz       : {hz} Hz")
+
+            metin = "\n".join(s)
+            self.after(0, lambda: self._sistem_bilgisini_goster(metin))
+
+        threading.Thread(target=topla, daemon=True).start()
+
+    def _sistem_bilgisini_goster(self, metin):
+        self.sistem_bilgi_text.configure(state="normal")
+        self.sistem_bilgi_text.delete("1.0", tk.END)
+        self.sistem_bilgi_text.insert(tk.END, metin)
+        self.sistem_bilgi_text.configure(state="disabled")
+
+
+    # ------------------------------------------------------------------
+    # 17) Sistem Sağlığı (Windows Defender durumu + olay günlüğü)
+    # ------------------------------------------------------------------
+    def sistem_sagligi_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="Sistem Sağlığı")
+
+        ttk.Label(frame, text="Sistem Sağlığı", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="⚠ Bu bölüm kendi virüs tarama motorumuz DEĞİLDİR. Windows Defender'ın "
+                 "kendi durumunu ve Windows'un sistem olay günlüğünü senin için okunabilir "
+                 "hale getirir. Profesyonel bir antivirüs/güvenlik ürününün yerini tutmaz.",
+            foreground=RENK["metin_gri"], wraplength=580, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        btns = ttk.Frame(frame)
+        btns.pack(anchor="w", padx=15, pady=5)
+        ttk.Button(btns, text="🛡 Defender Durumunu Kontrol Et", command=self._defender_durumu_kontrol).grid(
+            row=0, column=0, padx=5
+        )
+        ttk.Button(btns, text="☣ Son Tehdit Kayıtları", command=self._defender_tehdit_gecmisi).grid(
+            row=0, column=1, padx=5
+        )
+        ttk.Button(btns, text="⚠ Sistem Hata Günlüğü (Son 20)", command=self._sistem_hata_gunlugu).grid(
+            row=1, column=0, padx=5, pady=5
+        )
+        ttk.Button(btns, text="🔍 Hızlı Tarama Başlat (Defender)", command=self._defender_hizli_tarama).grid(
+            row=1, column=1, padx=5, pady=5
+        )
+
+        self.saglik_text = tk.Text(frame, height=18, width=75, bg=RENK["panel2"], fg=RENK["metin"],
+                                    insertbackground=RENK["metin"], borderwidth=0, font=("Consolas", 9))
+        self.saglik_text.pack(padx=15, pady=10, fill="both")
+        self.saglik_text.insert("1.0", "Yukarıdaki butonlardan birine bas...")
+        self.saglik_text.configure(state="disabled")
+
+    def _saglik_text_yaz(self, metin):
+        self.saglik_text.configure(state="normal")
+        self.saglik_text.delete("1.0", tk.END)
+        self.saglik_text.insert(tk.END, metin)
+        self.saglik_text.configure(state="disabled")
+
+    def _defender_durumu_kontrol(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        self._saglik_text_yaz("Kontrol ediliyor...")
+
+        def isle():
+            cikti = self._powershell_calistir(
+                "Get-MpComputerStatus | Select-Object AntivirusEnabled, "
+                "RealTimeProtectionEnabled, AntivirusSignatureLastUpdated, "
+                "QuickScanAge, FullScanAge | Format-List", timeout=15
+            )
+            if not cikti:
+                cikti = ("Windows Defender bilgisi alınamadı. Farklı bir antivirüs "
+                          "yazılımı kullanıyor olabilirsin veya PowerShell'in bu " 
+                          "komutu çalıştırma izni olmayabilir.")
+            self.after(0, lambda: self._saglik_text_yaz(cikti))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _defender_tehdit_gecmisi(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        self._saglik_text_yaz("Tehdit geçmişi okunuyor...")
+
+        def isle():
+            cikti = self._powershell_calistir(
+                "Get-MpThreatDetection | Select-Object -First 15 ThreatID, "
+                "InitialDetectionTime, Resources | Format-List", timeout=15
+            )
+            if not cikti:
+                cikti = "Kayıtlı bir tehdit bulunamadı (ya da Defender aktif değil)."
+            self.after(0, lambda: self._saglik_text_yaz(cikti))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _sistem_hata_gunlugu(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        self._saglik_text_yaz("Olay günlüğü taranıyor...")
+
+        def isle():
+            cikti = self._powershell_calistir(
+                "Get-WinEvent -FilterHashtable @{LogName='System'; Level=2} "
+                "-MaxEvents 20 -ErrorAction SilentlyContinue | "
+                "Select-Object TimeCreated, ProviderName, Message | Format-List",
+                timeout=15,
+            )
+            if not cikti:
+                cikti = "Son kayıtlarda kritik hata bulunamadı (iyi haber!)."
+            self.after(0, lambda: self._saglik_text_yaz(cikti))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _defender_hizli_tarama(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        if not messagebox.askyesno(
+            "Onay", "Windows Defender hızlı taraması başlatılacak (arka planda "
+                    "birkaç dakika sürebilir). Devam edilsin mi?"
+        ):
+            return
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", "Start-MpScan -ScanType QuickScan"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+            self._saglik_text_yaz("Hızlı tarama arka planda başlatıldı (Windows Defender).")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 20) Programlar (yüklü programları listele/kaldır — kendi eklemem)
+    # ------------------------------------------------------------------
+    def programlar_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="Programlar")
+
+        ttk.Label(frame, text="Yüklü Programlar", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Windows'un kendi kayıtlı program listesini okur. Kaldırma işlemi, "
+                 "programın kendi resmi kaldırma (uninstaller) aracını çalıştırır — "
+                 "bu araç dosya silme işlemi yapmaz, sadece ilgili programı tetikler.",
+            foreground=RENK["metin_gri"], wraplength=580, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        ust = ttk.Frame(frame)
+        ust.pack(fill="x", padx=15, pady=5)
+        ttk.Button(ust, text="🔄 Listeyi Yenile", command=self._programlari_listele).pack(side="left")
+        self.program_arama_var = tk.StringVar()
+        self.program_arama_var.trace_add("write", lambda *a: self._program_listesini_filtrele())
+        ttk.Entry(ust, textvariable=self.program_arama_var, width=30).pack(side="left", padx=10)
+
+        self.program_listbox = tk.Listbox(frame, width=75, height=14)
+        self.program_listbox.pack(padx=15, pady=5, fill="both")
+
+        ttk.Button(frame, text="🗑 Seçili Programı Kaldır", command=self._programi_kaldir).pack(
+            anchor="w", padx=15, pady=10
+        )
+
+        self._program_listesi_verisi = []
+
+    def _programlari_listele(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+
+        def isle():
+            sonuc = []
+            anahtar_yollari = [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_LOCAL_MACHINE,
+                 r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+            ]
+            for hive, yol in anahtar_yollari:
+                try:
+                    with winreg.OpenKey(hive, yol) as ana_anahtar:
+                        i = 0
+                        while True:
+                            try:
+                                alt_ad = winreg.EnumKey(ana_anahtar, i)
+                                i += 1
+                                with winreg.OpenKey(ana_anahtar, alt_ad) as alt_anahtar:
+                                    try:
+                                        ad, _ = winreg.QueryValueEx(alt_anahtar, "DisplayName")
+                                    except FileNotFoundError:
+                                        continue
+                                    try:
+                                        kaldirma, _ = winreg.QueryValueEx(alt_anahtar, "UninstallString")
+                                    except FileNotFoundError:
+                                        kaldirma = None
+                                    sonuc.append((ad, kaldirma))
+                            except OSError:
+                                break
+                except FileNotFoundError:
+                    continue
+            sonuc.sort(key=lambda x: x[0].lower())
+            self.after(0, lambda: self._program_listesini_guncelle(sonuc))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _program_listesini_guncelle(self, veri):
+        self._program_listesi_verisi = veri
+        self._program_listesini_filtrele()
+
+    def _program_listesini_filtrele(self):
+        if not hasattr(self, "program_listbox"):
+            return
+        filtre = self.program_arama_var.get().lower()
+        self.program_listbox.delete(0, tk.END)
+        for ad, _kaldirma in self._program_listesi_verisi:
+            if filtre and filtre not in ad.lower():
+                continue
+            self.program_listbox.insert(tk.END, ad)
+
+    def _programi_kaldir(self):
+        secim = self.program_listbox.curselection()
+        if not secim:
+            return
+        secili_ad = self.program_listbox.get(secim[0])
+        eslesme = next((k for ad, k in self._program_listesi_verisi if ad == secili_ad), None)
+        if not eslesme:
+            messagebox.showwarning("Uyarı", "Bu program için kaldırma bilgisi bulunamadı.")
+            return
+        if not messagebox.askyesno("Onay", f"'{secili_ad}' kaldırılsın mı?\n\nBu, programın kendi "
+                                            "kaldırma sihirbazını açacaktır."):
+            return
+        try:
+            subprocess.Popen(eslesme, shell=True)
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 21) Hakkında / Yasal Uyarı
+    # ------------------------------------------------------------------
+    def hakkinda_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="ℹ Hakkında")
+
+        ttk.Label(frame, text="Hakkında ve Yasal Uyarı", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        metin_kutusu = tk.Text(frame, height=24, width=75, bg=RENK["panel2"], fg=RENK["metin"],
+                                insertbackground=RENK["metin"], borderwidth=0, wrap="word",
+                                font=("Segoe UI", 9))
+        metin_kutusu.pack(padx=15, pady=10, fill="both")
+        metin_kutusu.insert("1.0", YASAL_UYARI)
+        metin_kutusu.configure(state="disabled")
+
+
+    # ------------------------------------------------------------------
+    # 22) Sıkıştırma (zip aç/oluştur — Python'un yerleşik zipfile'ı, ek gerekmez)
+    # ------------------------------------------------------------------
+    def sikistirma_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="🗜 Sıkıştırma")
+
+        ttk.Label(frame, text="Dosya Sıkıştırma / Arşiv", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Python'un kendi yerleşik zip motoruyla çalışır — WinRAR/7-Zip gibi "
+                 "ek bir program kurmana gerek yok. Standart .zip formatı kullanılır, "
+                 "her yerde açılabilir.",
+            foreground=RENK["metin_gri"], wraplength=600, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        btns = ttk.Frame(frame)
+        btns.pack(anchor="w", padx=15, pady=10)
+        ttk.Button(btns, text="🗜 Dosya/Klasör Sıkıştır (.zip)", command=self._sikistir).grid(
+            row=0, column=0, padx=5
+        )
+        ttk.Button(btns, text="📂 .zip Aç / Çıkart", command=self._zip_ac).grid(row=0, column=1, padx=5)
+
+        self.sikistirma_log = tk.Text(frame, height=14, width=75, bg=RENK["panel2"], fg=RENK["metin"],
+                                       insertbackground=RENK["metin"], borderwidth=0)
+        self.sikistirma_log.pack(padx=15, pady=10, fill="both")
+        self.sikistirma_log.configure(state="disabled")
+
+    def _sikistirma_log_yaz(self, satir):
+        self.sikistirma_log.configure(state="normal")
+        self.sikistirma_log.insert(tk.END, satir + "\n")
+        self.sikistirma_log.see(tk.END)
+        self.sikistirma_log.configure(state="disabled")
+
+    def _sikistir(self):
+        path = self._dosya_veya_klasor_sec()
+        if not path:
+            return
+        hedef = filedialog.asksaveasfilename(
+            title="Zip olarak kaydet", defaultextension=".zip",
+            filetypes=[("Zip Arşivi", "*.zip")],
+        )
+        if not hedef:
+            return
+        try:
+            with zipfile.ZipFile(hedef, "w", zipfile.ZIP_DEFLATED) as z:
+                if os.path.isdir(path):
+                    ust_klasor = os.path.dirname(path.rstrip("\\/"))
+                    for kok, _dizinler, dosyalar in os.walk(path):
+                        for ad in dosyalar:
+                            tam = os.path.join(kok, ad)
+                            arcname = os.path.relpath(tam, ust_klasor)
+                            z.write(tam, arcname)
+                else:
+                    z.write(path, os.path.basename(path))
+            boyut_mb = os.path.getsize(hedef) / (1024 * 1024)
+            self._sikistirma_log_yaz(f"[Sıkıştırıldı] {path}\n  → {hedef}  ({boyut_mb:.2f} MB)")
+            messagebox.showinfo("Başarılı", f"Sıkıştırıldı:\n{hedef}")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _zip_ac(self):
+        zip_yolu = filedialog.askopenfilename(title="Açılacak .zip dosyasını seç",
+                                               filetypes=[("Zip Arşivi", "*.zip")])
+        if not zip_yolu:
+            return
+        hedef_klasor = filedialog.askdirectory(title="Çıkartılacak klasörü seç")
+        if not hedef_klasor:
+            return
+        try:
+            with zipfile.ZipFile(zip_yolu, "r") as z:
+                z.extractall(hedef_klasor)
+            self._sikistirma_log_yaz(f"[Çıkartıldı] {zip_yolu}\n  → {hedef_klasor}")
+            messagebox.showinfo("Başarılı", "Arşiv çıkartıldı.")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 23) Ekran Rengi — parlaklık/kontrast/gama
+    # ------------------------------------------------------------------
+    def ekran_rengi_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="🌈 Ekran Rengi")
+
+        ttk.Label(frame, text="Ekran Rengi Ayarları", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Windows'un kendi ekran kartı sürücüsü bağımsız gama-ramp API'sini "
+                 "kullanarak parlaklık/kontrast/gama ayarlar. Bazı ekran kartı "
+                 "sürücüleri aşırı uç değerleri reddedebilir.",
+            foreground=RENK["metin_gri"], wraplength=600, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        self.ekran_parlaklik_var = tk.DoubleVar(value=0.0)
+        self.ekran_kontrast_var = tk.DoubleVar(value=1.0)
+        self.ekran_gama_var = tk.DoubleVar(value=1.0)
+
+        for etiket, degisken, minim, maksim in [
+            ("Parlaklık (Brightness)", self.ekran_parlaklik_var, -0.3, 0.3),
+            ("Kontrast (Contrast)", self.ekran_kontrast_var, 0.5, 1.8),
+            ("Gama (Gamma)", self.ekran_gama_var, 0.5, 2.2),
+        ]:
+            satir = ttk.Frame(frame)
+            satir.pack(fill="x", padx=15, pady=8)
+            ttk.Label(satir, text=etiket, width=22).pack(side="left")
+            ttk.Scale(
+                satir, from_=minim, to=maksim, orient="horizontal", variable=degisken,
+                length=320, command=lambda v: self._ekran_rengini_uygula(),
+            ).pack(side="left", padx=10)
+
+        btns = ttk.Frame(frame)
+        btns.pack(anchor="w", padx=15, pady=15)
+        ttk.Button(btns, text="✅ Uygula", command=self._ekran_rengini_uygula).grid(row=0, column=0, padx=5)
+        ttk.Button(btns, text="↺ Varsayılana Sıfırla", command=self._ekran_rengini_sifirla).grid(
+            row=0, column=1, padx=5
+        )
+
+    def _gamma_rampi_hesapla_ve_uygula(self, parlaklik, kontrast, gama):
+        if not IS_WINDOWS:
+            return False
+        try:
+            class RAMP(ctypes.Structure):
+                _fields_ = [
+                    ("Red", wintypes.WORD * 256), ("Green", wintypes.WORD * 256),
+                    ("Blue", wintypes.WORD * 256),
+                ]
+            ramp = RAMP()
+            for i in range(256):
+                deger = i / 255.0
+                deger = deger ** (1.0 / max(0.1, gama))
+                deger = (deger - 0.5) * kontrast + 0.5 + parlaklik
+                deger = min(1.0, max(0.0, deger))
+                w = int(deger * 65535)
+                ramp.Red[i] = w
+                ramp.Green[i] = w
+                ramp.Blue[i] = w
+            hdc = ctypes.windll.user32.GetDC(0)
+            sonuc = ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp))
+            ctypes.windll.user32.ReleaseDC(0, hdc)
+            return bool(sonuc)
+        except Exception:
+            return False
+
+    def _ekran_rengini_uygula(self):
+        if not IS_WINDOWS:
+            return
+        basarili = self._gamma_rampi_hesapla_ve_uygula(
+            self.ekran_parlaklik_var.get(), self.ekran_kontrast_var.get(), self.ekran_gama_var.get()
+        )
+        if not basarili:
+            pass  # sürükleme sırasında sık başarısızlık normal olabilir, sessiz geç
+
+    def _ekran_rengini_sifirla(self):
+        self.ekran_parlaklik_var.set(0.0)
+        self.ekran_kontrast_var.set(1.0)
+        self.ekran_gama_var.set(1.0)
+        if IS_WINDOWS:
+            self._gamma_rampi_hesapla_ve_uygula(0.0, 1.0, 1.0)
+            messagebox.showinfo("Başarılı", "Ekran rengi varsayılana sıfırlandı.")
+        else:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+
+    # ------------------------------------------------------------------
+    # 24) Ekstra Araçlar (Uyanık Tut + Hızlı Başlatıcı)
+    # ------------------------------------------------------------------
+    def powertoys_ekstra_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="🧰 Ekstra")
+
+        ttk.Label(frame, text="Ekstra Araçlar", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+
+        ttk.Label(frame, text="Uyanık Tut", style="AltBaslik.TLabel").pack(
+            anchor="w", padx=15, pady=(5, 2)
+        )
+        ttk.Label(
+            frame,
+            text="Bilgisayarın uyku moduna geçmesini/ekranın kararmasını engeller "
+                 "(örn. uzun bir işlem/indirme sırasında).",
+            foreground=RENK["metin_gri"], wraplength=600, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 5))
+        self.uyanik_tut_btn = ttk.Button(frame, text="☕ Uyanık Tut: Kapalı", command=self._uyanik_tutu_degistir)
+        self.uyanik_tut_btn.pack(anchor="w", padx=15, pady=5)
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", padx=15, pady=15)
+
+        ttk.Label(frame, text="Hızlı Başlatıcı", style="AltBaslik.TLabel").pack(
+            anchor="w", padx=15, pady=(5, 2)
+        )
+        ttk.Label(
+            frame,
+            text="Başlat menüsündeki kısayolları indeksler, yazarak anında arayıp "
+                 "çift tıkla açabilirsin.",
+            foreground=RENK["metin_gri"], wraplength=600, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 5))
+
+        ttk.Button(frame, text="🔄 Uygulamaları İndeksle", command=self._baslangic_menusunu_indeksle).pack(
+            anchor="w", padx=15, pady=5
+        )
+        self.hizli_baslatici_arama_var = tk.StringVar()
+        self.hizli_baslatici_arama_var.trace_add("write", lambda *a: self._hizli_baslatici_filtrele())
+        ttk.Entry(frame, textvariable=self.hizli_baslatici_arama_var, width=50).pack(
+            anchor="w", padx=15, pady=5
+        )
+        self.hizli_baslatici_listbox = tk.Listbox(frame, width=75, height=10)
+        self.hizli_baslatici_listbox.pack(padx=15, pady=5, fill="both")
+        self.hizli_baslatici_listbox.bind("<Double-Button-1>", self._hizli_baslatici_ac)
+
+    def _uyanik_tutu_degistir(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        ES_DISPLAY_REQUIRED = 0x00000002
+        self._uyanik_tut_aktif = not self._uyanik_tut_aktif
+        try:
+            if self._uyanik_tut_aktif:
+                ctypes.windll.kernel32.SetThreadExecutionState(
+                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+                )
+                self.uyanik_tut_btn.config(text="☕ Uyanık Tut: Açık")
+            else:
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+                self.uyanik_tut_btn.config(text="☕ Uyanık Tut: Kapalı")
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    def _baslangic_menusunu_indeksle(self):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+
+        def isle():
+            yollar = [
+                os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs"),
+                os.path.join(os.environ.get("PROGRAMDATA", ""), r"Microsoft\Windows\Start Menu\Programs"),
+            ]
+            sonuc = []
+            for y in yollar:
+                if not os.path.isdir(y):
+                    continue
+                for kok, _dizinler, dosyalar in os.walk(y):
+                    for ad in dosyalar:
+                        if ad.lower().endswith(".lnk"):
+                            sonuc.append((os.path.splitext(ad)[0], os.path.join(kok, ad)))
+            sonuc.sort(key=lambda x: x[0].lower())
+            self._baslangic_menusu_indeksi = sonuc
+            self.after(0, self._hizli_baslatici_filtrele)
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _hizli_baslatici_filtrele(self):
+        if not hasattr(self, "hizli_baslatici_listbox"):
+            return
+        sorgu = self.hizli_baslatici_arama_var.get().lower().strip()
+        self.hizli_baslatici_listbox.delete(0, tk.END)
+        for ad, _yol in self._baslangic_menusu_indeksi:
+            if sorgu and sorgu not in ad.lower():
+                continue
+            self.hizli_baslatici_listbox.insert(tk.END, ad)
+
+    def _hizli_baslatici_ac(self, event=None):
+        secim = self.hizli_baslatici_listbox.curselection()
+        if not secim:
+            return
+        secili_ad = self.hizli_baslatici_listbox.get(secim[0])
+        eslesme = next((y for ad, y in self._baslangic_menusu_indeksi if ad == secili_ad), None)
+        if not eslesme:
+            return
+        try:
+            os.startfile(eslesme)
+        except Exception as e:
+            messagebox.showerror("Hata", str(e))
+
+    # ------------------------------------------------------------------
+    # 25) Oyun Bildirimi ("Giriş Sağlandı" tarzı, sol üstte beliren/kaybolan bildirim)
+    # ------------------------------------------------------------------
+    def oyun_bildirimi_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="🎮 Oyun Bildirimi")
+
+        ttk.Label(frame, text="Oyun / Program Giriş Bildirimi", style="Baslik.TLabel").pack(
+            anchor="w", padx=15, pady=(15, 5)
+        )
+        ttk.Label(
+            frame,
+            text="Seçtiğin bir işlem (oyun/program .exe adı) başladığında, ekranın "
+                 "sol üstünde 'Bağlantı Kuruldu' yazan küçük bir kutu belirip kısa "
+                 "süre sonra otomatik solarak kaybolur. Bağımsız, hafif bir bildirim "
+                 "aracıdır.",
+            foreground=RENK["metin_gri"], wraplength=600, justify="left",
+        ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        ekle_cercevesi = ttk.Frame(frame)
+        ekle_cercevesi.pack(anchor="w", padx=15, pady=5, fill="x")
+        ttk.Label(ekle_cercevesi, text="İşlem adı (ör. csgo.exe):").pack(side="left")
+        self.izlenen_islem_var = tk.StringVar()
+        ttk.Entry(ekle_cercevesi, textvariable=self.izlenen_islem_var, width=25).pack(
+            side="left", padx=8
+        )
+        ttk.Button(ekle_cercevesi, text="➕ Ekle", command=self._izlenen_islem_ekle).pack(side="left", padx=5)
+        ttk.Button(ekle_cercevesi, text="➖ Kaldır", command=self._izlenen_islem_kaldir).pack(side="left", padx=5)
+
+        self.izlenen_listbox = tk.Listbox(frame, width=50, height=6)
+        self.izlenen_listbox.pack(padx=15, pady=5, anchor="w")
+
+        btns = ttk.Frame(frame)
+        btns.pack(anchor="w", padx=15, pady=10)
+        self.oyun_izleme_btn = ttk.Button(btns, text="▶ İzlemeyi Başlat", command=self._oyun_izlemeyi_ac_kapa)
+        self.oyun_izleme_btn.grid(row=0, column=0, padx=5)
+        ttk.Button(btns, text="🔔 Test Bildirimi Göster", command=lambda: self._oyun_bildirimi_goster(
+            self.izlenen_islem_var.get() or "test.exe"
+        )).grid(row=0, column=1, padx=5)
+
+    def _izlenen_islem_ekle(self):
+        ad = self.izlenen_islem_var.get().strip()
+        if not ad:
+            return
+        if not ad.lower().endswith(".exe"):
+            ad += ".exe"
+        if ad not in self._izlenen_islemler:
+            self._izlenen_islemler.append(ad)
+            self.izlenen_listbox.insert(tk.END, ad)
+        self.izlenen_islem_var.set("")
+
+    def _izlenen_islem_kaldir(self):
+        secim = self.izlenen_listbox.curselection()
+        if not secim:
+            return
+        ad = self.izlenen_listbox.get(secim[0])
+        self.izlenen_listbox.delete(secim[0])
+        if ad in self._izlenen_islemler:
+            self._izlenen_islemler.remove(ad)
+
+    def _oyun_izlemeyi_ac_kapa(self):
+        if self._oyun_izleme_aktif:
+            self._oyun_izleme_aktif = False
+            self.oyun_izleme_btn.config(text="▶ İzlemeyi Başlat")
+            return
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        if not self._izlenen_islemler:
+            messagebox.showwarning("Uyarı", "Önce izlenecek en az bir işlem ekle.")
+            return
+        self._oyun_izleme_aktif = True
+        self.oyun_izleme_btn.config(text="⏸ İzlemeyi Durdur")
+
+        def dongu():
+            onceki = set()
+            ilk_tur = True
+            while self._oyun_izleme_aktif:
+                try:
+                    cikti = subprocess.run(
+                        ["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=5
+                    ).stdout
+                    mevcut = set()
+                    for satir in cikti.splitlines():
+                        parcalar = satir.split('","')
+                        if parcalar:
+                            ad = parcalar[0].strip('"').lower()
+                            mevcut.add(ad)
+                    if not ilk_tur:
+                        yeni_baslayanlar = mevcut - onceki
+                        for izlenen in list(self._izlenen_islemler):
+                            if izlenen.lower() in yeni_baslayanlar:
+                                self.after(0, lambda i=izlenen: self._oyun_bildirimi_goster(i))
+                    onceki = mevcut
+                    ilk_tur = False
+                except Exception:
+                    pass
+                for _ in range(30):
+                    if not self._oyun_izleme_aktif:
+                        break
+                    time.sleep(0.1)
+
+        threading.Thread(target=dongu, daemon=True).start()
+
+    def _oyun_bildirimi_goster(self, isim):
+        if not IS_WINDOWS:
+            messagebox.showinfo("Bilgi", "Bu özellik yalnızca Windows'ta çalışır.")
+            return
+        pencere = tk.Toplevel(self)
+        pencere.overrideredirect(True)
+        pencere.attributes("-topmost", True)
+        pencere.geometry("+16+16")
+        try:
+            pencere.attributes("-alpha", 0.0)
+        except Exception:
+            pass
+
+        kutu = tk.Frame(pencere, bg="#101418", highlightbackground=RENK["vurgu2"],
+                         highlightthickness=2, bd=0)
+        kutu.pack()
+        tk.Label(kutu, text=f"🎮 {isim}", bg="#101418", fg="#ffffff",
+                 font=("Segoe UI", 11, "bold")).pack(padx=16, pady=(10, 2), anchor="w")
+        tk.Label(kutu, text="✅ Bağlantı Kuruldu — Giriş Sağlandı", bg="#101418",
+                 fg=RENK["vurgu2"], font=("Segoe UI", 9)).pack(padx=16, pady=(0, 10), anchor="w")
+
+        def sol_yap(adim=0):
+            alpha = min(0.95, (adim / 10) * 0.95)
+            try:
+                pencere.attributes("-alpha", alpha)
+            except Exception:
+                pass
+            if adim < 10:
+                pencere.after(25, lambda: sol_yap(adim + 1))
+            else:
+                pencere.after(1500, sag_yap)
+
+        def sag_yap(adim=0):
+            alpha = max(0.0, 0.95 - (adim / 12) * 0.95)
+            try:
+                pencere.attributes("-alpha", alpha)
+            except Exception:
+                pass
+            if adim < 12:
+                pencere.after(40, lambda: sag_yap(adim + 1))
+            else:
+                try:
+                    pencere.destroy()
+                except Exception:
+                    pass
+
+        sol_yap()
+
+    # ------------------------------------------------------------------
+    # 26) Dil / Language (7 dilde menü desteği)
+    # ------------------------------------------------------------------
+    def dil_sekmesi(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="🌐 Dil")
+
+        self._dil_baslik_label = ttk.Label(frame, text="Dil / Language", style="Baslik.TLabel")
+        self._dil_baslik_label.pack(anchor="w", padx=15, pady=(15, 5))
+
+        self._dil_aciklama_label = ttk.Label(
+            frame, text="", foreground=RENK["metin_gri"], wraplength=620, justify="left",
+        )
+        self._dil_aciklama_label.pack(anchor="w", padx=15, pady=(0, 15))
+
+        izgara = ttk.Frame(frame)
+        izgara.pack(anchor="w", padx=15, pady=10)
+        for i, kod in enumerate(DILLER):
+            ttk.Button(
+                izgara, text=DIL_ISIMLERI[kod], width=18,
+                command=lambda k=kod: self._dili_uygula(k),
+            ).grid(row=i // 3, column=i % 3, padx=6, pady=6)
+
+    def _dili_uygula(self, dil_kodu):
+        if dil_kodu not in DILLER:
+            return
+        self._mevcut_dil = dil_kodu
+
+        # Pencere başlığı
+        self.title(CEVIRILER["app_title"][dil_kodu])
+
+        # Banner metinleri
+        if hasattr(self, "_banner_canvas"):
+            self._banner_canvas.itemconfigure(
+                self._banner_baslik_id, text=CEVIRILER["app_title"][dil_kodu].split(" ", 1)[-1].upper()
+            )
+            self._banner_canvas.itemconfigure(self._banner_alt_id, text=CEVIRILER["banner_alt"][dil_kodu])
+
+        # Alt bilgi çubuğu
+        if hasattr(self, "_footer_sol_label"):
+            self._footer_sol_label.config(text=CEVIRILER["app_title"][dil_kodu])
+
+        # Sekme (menü) isimleri
+        if hasattr(self, "notebook"):
+            for i, anahtar in enumerate(TAB_SIRASI):
+                try:
+                    self.notebook.tab(i, text=CEVIRILER[anahtar][dil_kodu])
+                except Exception:
+                    pass
+
+        # Dil sekmesinin kendi içeriği
+        if hasattr(self, "_dil_baslik_label"):
+            self._dil_baslik_label.config(text=CEVIRILER["dil_baslik"][dil_kodu])
+        if hasattr(self, "_dil_aciklama_label"):
+            self._dil_aciklama_label.config(text=CEVIRILER["dil_aciklama"][dil_kodu])
 
 
 if __name__ == "__main__":
